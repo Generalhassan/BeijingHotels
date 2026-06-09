@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Beijing — Hotel Shortlist Map</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+  :root{
+    --paper:#F7F3EC; --ink:#23201B; --muted:#6F675A;
+    --core:#C8453B;      /* Wangfujing / Forbidden City core  */
+    --north:#2E7D5B;     /* North hutong (Nanluoguxiang/Houhai) */
+    --railway:#E08A1E;   /* Dongdan / Beijing Railway Station   */
+    --cbd:#6B7280;       /* CBD outlier                          */
+    --metro:#1C2530;     /* Metro M badges                       */
+  }
+  html,body{margin:0;height:100%;font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;color:var(--ink);}
+  #map{position:absolute;inset:0;background:var(--paper);}
+
+  /* Title */
+  .titlecard{
+    position:absolute;z-index:1000;top:14px;left:14px;max-width:300px;
+    background:var(--paper);border:1px solid #e3dccd;border-radius:10px;
+    padding:12px 14px;box-shadow:0 4px 18px rgba(35,32,27,.16);
+  }
+  .titlecard h1{margin:0;font-size:17px;letter-spacing:.2px;}
+  .titlecard h1 .accent{color:var(--core);}
+  .titlecard p{margin:5px 0 0;font-size:11.5px;line-height:1.45;color:var(--muted);}
+
+  /* Legend */
+  .legend{
+    position:absolute;z-index:1000;bottom:18px;left:14px;
+    background:var(--paper);border:1px solid #e3dccd;border-radius:10px;
+    padding:11px 13px;box-shadow:0 4px 18px rgba(35,32,27,.16);font-size:12px;max-width:240px;
+  }
+  .legend b{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:7px;}
+  .legend .row{display:flex;align-items:center;gap:8px;margin:4px 0;}
+  .dot{width:13px;height:13px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.2);flex:0 0 auto;}
+  .mbadge{width:15px;height:15px;border-radius:4px;background:var(--metro);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+  .legend .note{margin-top:8px;font-size:10.5px;color:var(--muted);line-height:1.4;border-top:1px solid #e9e2d4;padding-top:7px;}
+
+  /* Markers */
+  .hotel-pin{width:16px;height:16px;border-radius:50%;border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);}
+  .hotel-pin.approx{border-style:dashed;opacity:.92;}
+  .metro-pin{width:18px;height:18px;border-radius:5px;background:var(--metro);color:#fff;font-weight:700;font-size:11px;
+    display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);}
+
+  /* Popups */
+  .leaflet-popup-content{margin:11px 13px;font-size:12.5px;line-height:1.5;}
+  .pop-name{font-weight:700;font-size:13.5px;margin-bottom:3px;}
+  .pop-price{color:var(--core);font-weight:700;}
+  .pop-tag{display:inline-block;font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:1px 7px;border-radius:20px;color:#fff;margin-bottom:6px;}
+  .pop-ratings{color:var(--muted);font-size:11.5px;margin:4px 0;}
+  .pop-note{margin:5px 0 7px;}
+  .pop-approx{color:#9a6a00;font-size:11px;font-style:italic;}
+  .pop-link{font-size:11.5px;font-weight:600;color:#1a5fb4;text-decoration:none;}
+  .pop-link:hover{text-decoration:underline;}
+  .metro-pop{font-weight:600;}
+  .metro-pop small{display:block;font-weight:400;color:var(--muted);}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="titlecard">
+  <h1>Beijing — <span class="accent">Hotel Shortlist</span></h1>
+  <p>17 candidates for Sept 5–8. Prices shown are <b>3-night totals</b> (worth confirming). Click any pin for details; toggle layers top-right. Your Shanghai train leaves from <b>Beijing South</b> (off-map, to the south).</p>
+</div>
+
+<div class="legend">
+  <b>Clusters</b>
+  <div class="row"><span class="dot" style="background:var(--core)"></span>Wangfujing / Forbidden City core</div>
+  <div class="row"><span class="dot" style="background:var(--north)"></span>North hutong (Nanluoguxiang / Houhai)</div>
+  <div class="row"><span class="dot" style="background:var(--railway)"></span>Dongdan / Beijing Railway Stn</div>
+  <div class="row"><span class="dot" style="background:var(--cbd)"></span>CBD outlier (Jen)</div>
+  <div class="row"><span class="mbadge">M</span>Metro station</div>
+  <div class="note">Dashed pins = location approximate; verify against the booking listing. Metro coordinates are approximate.</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+  var CLR = {core:'#C8453B', north:'#2E7D5B', railway:'#E08A1E', cbd:'#6B7280'};
+  var CLUSTER_LABEL = {
+    core:'Wangfujing / core', north:'North hutong',
+    railway:'Dongdan / Railway Stn', cbd:'CBD'
+  };
+
+  var hotels = [
+    {n:"Sunworld Dynasty (Wangfujing)", lat:39.9183, lng:116.4118, c:"core", price:"€289", r:"Booking 9.0 · Google 4.4 · Trip 9.4", note:"On Wangfujing St — bullseye for Forbidden City & Tiananmen (~12–15 min walk)."},
+    {n:"FONTOO Tiananmen Wangfujing", lat:39.9105, lng:116.4112, c:"core", price:"€293", r:"No ratings noted", note:"South Wangfujing / near Tiananmen.", approx:true},
+    {n:"Oriental Vogue", lat:39.9232, lng:116.4177, c:"core", price:"€398", r:"Trip 9.8", note:"Dongsi Nan Dajie, ~15 min walk to the Forbidden City."},
+    {n:"Legendale (Jinbao St)", lat:39.9153, lng:116.4195, c:"core", price:"€404", r:"Booking 9.1 · Google 4.6 · Trip 9.1", note:"Jinbao St luxury, ~15 min walk to the Forbidden City."},
+    {n:"Jingmao (JM) Alley — Dongsi", lat:39.9240, lng:116.4170, c:"core", price:"€319", r:"Booking 9.4 · Google 5.0 · Trip 9.6", note:"Stylish boutique by Dongsi subway, ~18 min walk.", approx:true},
+    {n:"Happy Dragon Imperial Garden Courtyard", lat:39.9211, lng:116.4233, c:"core", price:"—", r:"Courtyard / hutong", note:"Chaoyangmen hutong, ~18 min walk to the Forbidden City."},
+    {n:"NOA Hotel Longfu", lat:39.9261, lng:116.4132, c:"core", price:"€263", r:"Booking 9.3 · Trip 9.5", note:"Longfusi, ~15 min walk to Forbidden City / Jingshan."},
+    {n:"Dasein Youlan", lat:39.9198, lng:116.4181, c:"core", price:"€333", r:"Booking 9.0 · Google 4.6 · Trip 9.7", note:"Bensi Alley courtyard + spa pool, ~20 min walk."},
+    {n:"Hutong Mòlì", lat:39.9275, lng:116.4221, c:"north", price:"—", r:"Booking 9.3 · Google 4.5 · Trip 9.3", note:"Dongsi hutong, ~18 min walk. You noted thin walls."},
+    {n:"Lezai Nanluo Courtyard", lat:39.9379, lng:116.4025, c:"north", price:"€335", r:"Booking 9.8 · Google 4.9 · Trip 9.6", note:"North hutong (Shajing) — Houhai & Nanluoguxiang on foot; ~25 min to Forbidden City."},
+    {n:"Aaliyah / Tangfu (Nanluoguxiang)", lat:39.9310, lng:116.4032, c:"north", price:"—", r:"~Trip 9.6", note:"Right on Nanluoguxiang hutong; ~2.9 km / 10-min taxi to the Forbidden City.", approx:true},
+    {n:"Minyoun Lia (Dongdan)", lat:39.9065, lng:116.4175, c:"railway", price:"€238", r:"Google 4.3 · Trip 9.5", note:"Dongdan, ~20 min to sights. Near Beijing Railway Stn (not your Shanghai station).", approx:true},
+    {n:"Howard Johnson Paragon", lat:39.9059, lng:116.4284, c:"railway", price:"€220", r:"Booking 9.0 · Google 4.3 · Trip 9.5", note:"Opposite Beijing Railway Stn (wrong station for you); ~25 min walk to sights."},
+    {n:"New Otani Chang Fu Gong", lat:39.9077, lng:116.4379, c:"railway", price:"€264", r:"Google 4.6 · Trip 9.5", note:"Jianguomen, CBD edge; ~25 min walk to sights."},
+    {n:"City Line Hotel", lat:39.9062, lng:116.4243, c:"railway", price:"—", r:"Google 4.5", note:"Name says Wangfujing, but sits near Beijing Railway Stn; ~25 min walk to sights."},
+    {n:"Bei Jing Tong Run (Beijige Rd)", lat:39.9075, lng:116.4195, c:"railway", price:"€266", r:"Trip 9.6", note:"By Dongdan metro; new in 2025; ~20 min to sights.", approx:true},
+    {n:"Jen Beijing by Shangri-La", lat:39.9130, lng:116.4610, c:"cbd", price:"€475", r:"Google 4.5", note:"Guomao CBD — 4.7 km from Wangfujing, NOT walkable to the sights."}
+  ];
+
+  var metro = [
+    {n:"Wangfujing", lines:"Line 1", lat:39.9148, lng:116.4108},
+    {n:"Dengshikou", lines:"Lines 5, 6", lat:39.9230, lng:116.4178},
+    {n:"Dongdan", lines:"Lines 1, 5", lat:39.9078, lng:116.4181},
+    {n:"Dongsi", lines:"Lines 5, 6", lat:39.9243, lng:116.4176},
+    {n:"Jianguomen", lines:"Lines 1, 2", lat:39.9080, lng:116.4344},
+    {n:"Beijing Railway Station", lines:"Line 2", lat:39.9028, lng:116.4279},
+    {n:"Tian'anmen East", lines:"Line 1", lat:39.9088, lng:116.4022},
+    {n:"Zhangzizhonglu", lines:"Line 5", lat:39.9322, lng:116.4140},
+    {n:"Beixinqiao", lines:"Line 5", lat:39.9416, lng:116.4175},
+    {n:"Nanluoguxiang", lines:"Lines 6, 8", lat:39.9337, lng:116.4032},
+    {n:"Shichahai", lines:"Line 8", lat:39.9387, lng:116.3958},
+    {n:"Dongsishitiao", lines:"Line 2", lat:39.9318, lng:116.4267},
+    {n:"Chaoyangmen", lines:"Lines 2, 6", lat:39.9233, lng:116.4344},
+    {n:"Guomao", lines:"Lines 1, 10", lat:39.9087, lng:116.4585}
+  ];
+
+  var map = L.map('map', {scrollWheelZoom:true});
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom:19, attribution:'&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+  // Hotel layers grouped by cluster so each can be toggled
+  var groups = {core:L.layerGroup(), north:L.layerGroup(), railway:L.layerGroup(), cbd:L.layerGroup()};
+  var bounds = [];
+
+  hotels.forEach(function(h){
+    var color = CLR[h.c];
+    var icon = L.divIcon({
+      className:'', html:'<div class="hotel-pin'+(h.approx?' approx':'')+'" style="background:'+color+'"></div>',
+      iconSize:[16,16], iconAnchor:[8,8], popupAnchor:[0,-8]
+    });
+    var gmaps = 'https://www.google.com/maps/search/?api=1&query='+h.lat+','+h.lng;
+    var html = '<div class="pop-name">'+esc(h.n)+'</div>'+
+      '<span class="pop-tag" style="background:'+color+'">'+CLUSTER_LABEL[h.c]+'</span><br>'+
+      (h.price && h.price!=='—' ? '<span class="pop-price">'+esc(h.price)+'</span> <span style="color:#9a958a;font-size:11px">/ 3 nights</span>' : '<span style="color:#9a958a">price not noted</span>')+
+      '<div class="pop-ratings">'+esc(h.r)+'</div>'+
+      '<div class="pop-note">'+esc(h.note)+'</div>'+
+      (h.approx ? '<div class="pop-approx">Pin approximate — verify against the listing.</div>' : '')+
+      '<a class="pop-link" href="'+gmaps+'" target="_blank" rel="noopener">Open in Google Maps ↗</a>';
+    var m = L.marker([h.lat,h.lng],{icon:icon}).bindPopup(html).bindTooltip(h.n,{direction:'top',offset:[0,-8]});
+    m.addTo(groups[h.c]);
+    bounds.push([h.lat,h.lng]);
+  });
+  Object.keys(groups).forEach(function(k){ groups[k].addTo(map); });
+
+  // Metro layer
+  var metroLayer = L.layerGroup();
+  metro.forEach(function(s){
+    var icon = L.divIcon({className:'', html:'<div class="metro-pin">M</div>', iconSize:[18,18], iconAnchor:[9,9], popupAnchor:[0,-9]});
+    L.marker([s.lat,s.lng],{icon:icon})
+      .bindPopup('<div class="metro-pop">'+esc(s.n)+' Station<small>'+esc(s.lines)+'</small></div>')
+      .bindTooltip(s.n+' (M)',{direction:'top',offset:[0,-9]})
+      .addTo(metroLayer);
+    bounds.push([s.lat,s.lng]);
+  });
+  metroLayer.addTo(map);
+
+  map.fitBounds(bounds, {padding:[55,55]});
+
+  // Layer toggles
+  L.control.layers(null, {
+    'Core hotels':groups.core,
+    'North hutong hotels':groups.north,
+    'Dongdan / Railway hotels':groups.railway,
+    'CBD (Jen)':groups.cbd,
+    'Ⓜ Metro stations':metroLayer
+  }, {collapsed:false, position:'topright'}).addTo(map);
+</script>
+</body>
+</html>
